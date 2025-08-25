@@ -1,0 +1,39 @@
+# Telegram Bot
+aiogram==3.2.0
+
+# OpenAI
+openai==1.3.8
+
+# PDF va Word fayl o'qish
+PyPDF2==3.0.1
+python-docx==1.1.0
+
+# Database
+sqlite3  # Python built-in
+# psycopg2-binary==2.9.7  # PostgreSQL uchun (keyinchalik)
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Logging va debugging
+requests==2.31.0
+
+# File handling
+pathlib  # Python built-in
+shutil  # Python built-in
+
+# Date va time
+datetime  # Python built-in
+
+# JSON handling
+json  # Python built-in
+
+# Regular expressions
+re  # Python built-in
+
+# Type hints
+typing  # Python built-in
+
+# System operations
+os  # Python built-in
+sys  # Python built-in
