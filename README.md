@@ -40,8 +40,8 @@ job_bot/
 
 ### 1. Repository ni clone qiling
 ```bash
-git clone <repository-url>
-cd job_bot
+git clone https://github.com/abdulazizDevop/ai_recruiter.git
+cd ai_recruiting
 ```
 
 ### 2. Virtual environment yarating
