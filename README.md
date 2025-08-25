@@ -41,7 +41,7 @@ job_bot/
 ### 1. Repository ni clone qiling
 ```bash
 git clone https://github.com/abdulazizDevop/ai_recruiter.git
-cd ai_recruiting
+cd ai_recruiter
 ```
 
 ### 2. Virtual environment yarating
