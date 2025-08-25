@@ -88,6 +88,12 @@ MIN_INTERVIEW_SCORE=70
 
 ### 5. Botni ishga tushiring
 ```bash
+python setup.py
+```
+```bash
+python run.py
+```
+```bash
 python bot.py
 ```
 
