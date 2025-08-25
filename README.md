@@ -103,7 +103,7 @@ python bot.py
 - ✅ `/ad_vacancy` - Maxfiy vakansiya yaratish komandasi
 - ✅ Kompaniya va vakansiya ma'lumotlari kiritish (16 bosqich)
 - ✅ AI uchun kriteriyalar o'rnatish
-- ✅ Suhbat savollarini kiritish (1-5 ta)
+- ✅ Suhbat savollarini kiritish (3-7 ta)
 - ✅ Vakansiyalar boshqaruvi (faollashtirish/arxivlash)
 - ✅ Kelgan arizalarni ko'rish
 - ✅ Nomzod ma'lumotlarini olish
