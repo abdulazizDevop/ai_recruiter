@@ -1,3 +1,540 @@
+# #!/usr/bin/env python3
+# # -*- coding: utf-8 -*-
+
+# import asyncio
+# import logging
+# import sys
+# import os
+# from aiogram import Bot, Dispatcher, Router, F
+# from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+# from aiogram.filters import Command, StateFilter
+# from aiogram.fsm.context import FSMContext
+# from aiogram.fsm.state import State, StatesGroup
+# from aiogram.fsm.storage.memory import MemoryStorage
+
+# # Local imports
+# from config import Config
+# from database.models import DatabaseManager
+# from services.ai_service import AIService
+# from services.file_service import FileService
+# from utils.language import get_text, get_language_keyboard, get_main_menu_keyboard, get_back_keyboard
+
+# # Handlers import
+# from handlers.employer import EmployerHandlers
+# from handlers.jobseeker import JobseekerHandlers
+# router = Router()
+
+# # Bot va Dispatcher yaratish
+# bot = Bot(token=Config.TELEGRAM_BOT_TOKEN)
+# storage = MemoryStorage()
+# dp = Dispatcher(storage=storage)
+# main_router = Router()
+
+# # Servislar
+# db = DatabaseManager()
+# ai_service = AIService(Config.OPENAI_API_KEY)
+# file_service = FileService(Config.FILES_BASE_PATH)
+
+# # Handlerlar
+# employer_handlers = EmployerHandlers(bot, db, ai_service, file_service)
+# jobseeker_handlers = JobseekerHandlers(bot, db, ai_service, file_service)
+
+# # Logging sozlash
+# logging.basicConfig(
+#     level=getattr(logging, Config.LOG_LEVEL),
+#     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.FileHandler(Config.LOG_FILE, encoding='utf-8'),
+#         logging.StreamHandler()
+#     ]
+# )
+# logger = logging.getLogger(__name__) # logging.getLogger(__name__)
+
+# # States - Foydalanuvchi holatlari
+# class EmployerStates(StatesGroup):
+#     CREATING_COMPANY_NAME = State()
+#     CREATING_COMPANY_DESC = State()
+#     CREATING_VACANCY_TITLE = State()
+#     CREATING_VACANCY_DESC = State()
+#     CREATING_VACANCY_REQ = State()
+#     CREATING_VACANCY_RESP = State()
+#     CREATING_SALARY = State()
+#     CREATING_WORK_HOURS = State()
+#     CREATING_WORK_DAYS = State()
+#     CREATING_WORK_LOCATION = State()
+#     CREATING_CRITERIA_SKILLS = State()
+#     CREATING_CRITERIA_EXP = State()
+#     CREATING_CRITERIA_EDU = State()
+#     CREATING_CRITERIA_LANG = State()
+#     CREATING_CRITERIA_ADD = State()
+#     CREATING_QUESTIONS = State()
+
+# class JobseekerStates(StatesGroup):
+#     UPLOADING_RESUME = State()
+#     ANSWERING_QUESTIONS = State()
+#     PROVIDING_INFO = State()
+
+# # Yordamchi funksiyalar
+# def get_user_language(user_id: int) -> str:
+#     """Foydalanuvchi tilini olish"""
+#     user = db.get_user_by_telegram_id(user_id)
+#     return user['language'] if user else Config.DEFAULT_LANGUAGE
+
+# async def get_user_info(message: Message) -> tuple:
+#     """Foydalanuvchi ma'lumotlarini olish"""
+#     user_id = message.from_user.id
+#     username = message.from_user.username
+#     first_name = message.from_user.first_name
+#     last_name = message.from_user.last_name
+#     return user_id, username, first_name, last_name
+
+# # Start komandasi
+# @router.message(Command("start"))
+# async def start_command(message: Message):
+#     """Bot boshlanishi"""
+#     try:
+#         user_id, username, first_name, last_name = await get_user_info(message)
+        
+#         # Foydalanuvchini bazaga yozish
+#         db.create_user(user_id, username, first_name, last_name)
+        
+#         # Til tanlash
+#         text = get_text("welcome", Config.DEFAULT_LANGUAGE)
+#         keyboard = get_language_keyboard()
+        
+#         await message.answer(text, reply_markup=keyboard)
+        
+#         logger.info(f"Yangi foydalanuvchi boshladi: {user_id} (@{username})")
+        
+#     except Exception as e:
+#         logger.error(f"Start komandasi xatoligi: {e}")
+#         await message.reply(get_text("error", Config.DEFAULT_LANGUAGE))
+
+# # Admin vakansiya komandasi
+# @router.message(Command("ad_vacancy"))
+# async def admin_vacancy_command(message: Message):
+#     """Maxfiy vakansiya yaratish komandasi"""
+#     try:
+#         user_id = message.from_user.id
+        
+#         # Admin tekshirish (ixtiyoriy)
+#         if Config.is_admin(user_id):
+#             logger.info(f"Admin vakansiya yaratish: {user_id}")
+        
+#         # Foydalanuvchini employer qilib belgilash
+#         db.update_user_role(user_id, 'employer')
+        
+#         language = get_user_language(user_id)
+        
+#         # Employer menyusiga o'tkazish
+#         await show_employer_menu(message.chat.id, language)
+        
+#     except Exception as e:
+#         logger.error(f"Admin vakansiya komandasi xatoligi: {e}")
+
+# # Til tanlash callback
+# @router.callback_query(F.data.startswith('lang_'))
+# async def language_callback(callback: CallbackQuery):
+#     """Til tanlash callback"""
+#     try:
+#         user_id = callback.from_user.id
+#         selected_lang = callback.data.split('_')[1]  # lang_uz -> uz
+        
+#         # Tilni yangilash
+#         user = db.get_user_by_telegram_id(user_id)
+#         if user:
+#             # Faqat til yangilash
+#             conn = db.get_connection()
+#             cursor = conn.cursor()
+#             cursor.execute(
+#                 "UPDATE users SET language = ? WHERE telegram_id = ?",
+#                 (selected_lang, user_id)
+#             )
+#             conn.commit()
+#             conn.close()
+#         else:
+#             # Yangi foydalanuvchi yaratish
+#             db.create_user(user_id, language=selected_lang)
+        
+#         # Xabarni o'chirish
+#         await callback.message.delete()
+        
+#         # Asosiy menyu ko'rsatish
+#         text = get_text("language_selected", selected_lang) + "\n\n"
+#         text += get_text("choose_role", selected_lang)
+#         keyboard = get_main_menu_keyboard(selected_lang)
+        
+#         await callback.message.answer(text, reply_markup=keyboard)
+        
+#         logger.info(f"Til tanlandi: {user_id} -> {selected_lang}")
+#         await callback.answer()
+        
+#     except Exception as e:
+#         logger.error(f"Til tanlash xatoligi: {e}")
+#         await callback.answer(get_text("error", "uz"))
+
+# # Rol tanlash callback
+# @router.callback_query(F.data.startswith('role_'))
+# async def role_callback(callback: CallbackQuery):
+#     """Rol tanlash callback"""
+#     try:
+#         user_id = callback.from_user.id
+#         role = callback.data.split('_')[1]  # role_employer -> employer
+#         language = get_user_language(user_id)
+        
+#         # Rolni yangilash
+#         db.update_user_role(user_id, role)
+        
+#         # Analytics
+#         db.add_analytics_event(f'role_selected_{role}', user_id)
+        
+#         # Xabarni o'chirish
+#         await callback.message.delete()
+        
+#         if role == 'employer':
+#             await show_employer_menu(callback.message.chat.id, language)
+#         elif role == 'jobseeker':
+#             await show_jobseeker_menu(callback.message.chat.id, language)
+        
+#         logger.info(f"Rol tanlandi: {user_id} -> {role}")
+#         await callback.answer()
+        
+#     except Exception as e:
+#         logger.error(f"Rol tanlash xatoligi: {e}")
+#         await callback.answer(get_text("error", language))
+
+# async def show_employer_menu(chat_id: int, language: str):
+#     """Ish beruvchi menyusini ko'rsatish"""
+#     try:
+#         text = get_text("employer_menu", language)
+#         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("create_vacancy", language), 
+#                     callback_data="employer_create_vacancy"
+#                 )
+#             ],
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("my_vacancies", language), 
+#                     callback_data="employer_vacancies"
+#                 )
+#             ],
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("applications", language), 
+#                     callback_data="employer_applications"
+#                 )
+#             ],
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("btn_back", language), 
+#                     callback_data="back_main"
+#                 )
+#             ]
+#         ])
+        
+#         await bot.send_message(chat_id, text, reply_markup=keyboard)
+        
+#     except Exception as e:
+#         logger.error(f"Employer menyu xatoligi: {e}")
+
+# async def show_jobseeker_menu(chat_id: int, language: str):
+#     """Ishga topshiruvchi menyusini ko'rsatish"""
+#     try:
+#         text = get_text("jobseeker_menu", language)
+#         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("find_jobs", language), 
+#                     callback_data="jobseeker_find_jobs"
+#                 )
+#             ],
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("my_applications", language), 
+#                     callback_data="jobseeker_applications"
+#                 )
+#             ],
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("btn_back", language), 
+#                     callback_data="back_main"
+#                 )
+#             ]
+#         ])
+        
+#         await bot.send_message(chat_id, text, reply_markup=keyboard)
+        
+#     except Exception as e:
+#         logger.error(f"Jobseeker menyu xatoligi: {e}")
+
+# # Asosiy menyuga qaytish
+# @router.callback_query(F.data == 'back_main')
+# async def back_to_main(callback: CallbackQuery):
+#     """Asosiy menyuga qaytish"""
+#     try:
+#         user_id = callback.from_user.id
+#         language = get_user_language(user_id)
+        
+#         # Xabarni o'chirish
+#         await callback.message.delete()
+        
+#         # Asosiy menyu
+#         text = get_text("choose_role", language)
+#         keyboard = get_main_menu_keyboard(language)
+        
+#         await callback.message.answer(text, reply_markup=keyboard)
+#         await callback.answer()
+        
+#     except Exception as e:
+#         logger.error(f"Asosiy menyuga qaytish xatoligi: {e}")
+
+# # Employer callbacks
+# @router.callback_query(F.data == 'employer_create_vacancy')
+# async def start_vacancy_creation(callback: CallbackQuery, state: FSMContext):
+#     """Vakansiya yaratishni boshlash"""
+#     try:
+#         user_id = callback.from_user.id
+#         language = get_user_language(user_id)
+        
+#         # State o'rnatish
+#         await state.set_state(EmployerStates.CREATING_COMPANY_NAME)
+        
+#         # Birinchi savol
+#         text = get_text("creating_vacancy", language) + "\n\n"
+#         text += get_text("company_name", language)
+        
+#         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("btn_cancel", language), 
+#                     callback_data="cancel_vacancy"
+#                 )
+#             ]
+#         ])
+        
+#         await callback.message.edit_text(text, reply_markup=keyboard)
+#         await callback.answer()
+        
+#     except Exception as e:
+#         logger.error(f"Vakansiya yaratishni boshlash xatoligi: {e}")
+
+# # Vakansiya yaratish - kompaniya nomi
+# @router.message(StateFilter(EmployerStates.CREATING_COMPANY_NAME))
+# async def handle_company_name(message: Message, state: FSMContext):
+#     """Kompaniya nomini qayta ishlash"""
+#     try:
+#         company_name = message.text.strip()
+#         language = get_user_language(message.from_user.id)
+        
+#         if len(company_name) < 2:
+#             await message.reply("❌ Kompaniya nomi juda qisqa!")
+#             return
+        
+#         # Ma'lumotni saqlash
+#         await state.update_data(company_name=company_name)
+#         await state.set_state(EmployerStates.CREATING_COMPANY_DESC)
+        
+#         # Keyingi savol
+#         text = get_text("company_description", language)
+#         await message.answer(text)
+        
+#     except Exception as e:
+#         logger.error(f"Kompaniya nomi xatoligi: {e}")
+
+# # Vakansiya yaratish - kompaniya tavsifi
+# @router.message(StateFilter(EmployerStates.CREATING_COMPANY_DESC))
+# async def handle_company_description(message: Message, state: FSMContext):
+#     """Kompaniya tavsifini qayta ishlash"""
+#     try:
+#         company_description = message.text.strip()
+#         language = get_user_language(message.from_user.id)
+        
+#         # Ma'lumotni saqlash
+#         await state.update_data(company_description=company_description)
+#         await state.set_state(EmployerStates.CREATING_VACANCY_TITLE)
+        
+#         # Keyingi savol
+#         text = get_text("vacancy_title", language)
+#         await message.answer(text)
+        
+#     except Exception as e:
+#         logger.error(f"Kompaniya tavsifi xatoligi: {e}")
+
+# # Vakansiya yaratish - vakansiya nomi
+# @router.message(StateFilter(EmployerStates.CREATING_VACANCY_TITLE))
+# async def handle_vacancy_title(message: Message, state: FSMContext):
+#     """Vakansiya nomini qayta ishlash"""
+#     try:
+#         vacancy_title = message.text.strip()
+#         language = get_user_language(message.from_user.id)
+        
+#         if len(vacancy_title) < 3:
+#             await message.reply("❌ Vakansiya nomi juda qisqa!")
+#             return
+        
+#         # Ma'lumotni saqlash
+#         await state.update_data(vacancy_title=vacancy_title)
+#         await state.set_state(EmployerStates.CREATING_VACANCY_DESC)
+        
+#         # Keyingi savol
+#         text = get_text("vacancy_description", language)
+#         await message.answer(text)
+        
+#     except Exception as e:
+#         logger.error(f"Vakansiya nomi xatoligi: {e}")
+
+# # Admin komandalar
+# @router.message(Command("admin"))
+# async def admin_command(message: Message):
+#     """Admin panel"""
+#     try:
+#         user_id = message.from_user.id
+        
+#         if not Config.is_admin(user_id):
+#             await message.reply(get_text("access_denied", get_user_language(user_id)))
+#             return
+        
+#         language = get_user_language(user_id)
+#         await show_admin_panel(message.chat.id, language)
+        
+#     except Exception as e:
+#         logger.error(f"Admin komandasi xatoligi: {e}")
+
+# async def show_admin_panel(chat_id: int, language: str):
+#     """Admin panelni ko'rsatish"""
+#     try:
+#         text = get_text("admin_menu", language)
+#         keyboard = InlineKeyboardMarkup(inline_keyboard=[
+#             [
+#                 InlineKeyboardButton(
+#                     text=get_text("analytics", language), 
+#                     callback_data="admin_analytics"
+#                 )
+#             ]
+#         ])
+        
+#         await bot.send_message(chat_id, text, reply_markup=keyboard)
+        
+#     except Exception as e:
+#         logger.error(f"Admin panel xatoligi: {e}")
+
+# @router.callback_query(F.data == 'admin_analytics')
+# async def admin_analytics(callback: CallbackQuery):
+#     """Admin analitika"""
+#     try:
+#         user_id = callback.from_user.id
+        
+#         if not Config.is_admin(user_id):
+#             await callback.answer(get_text("access_denied", "uz"))
+#             return
+        
+#         language = get_user_language(user_id)
+#         stats = db.get_analytics_summary()
+        
+#         from datetime import datetime
+#         today = datetime.now().strftime("%d.%m.%Y")
+        
+#         text = get_text("analytics_data", language).format(
+#             stats.get('total_users', 0),
+#             stats.get('employers', 0),
+#             stats.get('jobseekers', 0),
+#             stats.get('total_vacancies', 0),
+#             stats.get('active_vacancies', 0),
+#             stats.get('archived_vacancies', 0),
+#             stats.get('total_applications', 0),
+#             stats.get('accepted_applications', 0),
+#             stats.get('total_applications', 0) - stats.get('accepted_applications', 0),
+#             today
+#         )
+        
+#         await callback.answer()
+#         await callback.message.answer(text)
+        
+#     except Exception as e:
+#         logger.error(f"Admin analitika xatoligi: {e}")
+#         await callback.answer(get_text("error", "uz"))
+
+# # Noma'lum xabarlar uchun handler
+# @router.message()
+# async def unknown_message(message: Message):
+#     """Noma'lum xabarlar uchun"""
+#     try:
+#         user_id = message.from_user.id
+#         language = get_user_language(user_id)
+        
+#         # Foydalanuvchini tekshirish
+#         user = db.get_user_by_telegram_id(user_id)
+#         if not user:
+#             # Yangi foydalanuvchi - start komandasi
+#             text = get_text("welcome", Config.DEFAULT_LANGUAGE)
+#             keyboard = get_language_keyboard()
+#             await message.answer(text, reply_markup=keyboard)
+#             return
+        
+#         # Rol tekshirish
+#         if not user.get('role'):
+#             text = get_text("choose_role", language)
+#             keyboard = get_main_menu_keyboard(language)
+#             await message.answer(text, reply_markup=keyboard)
+#             return
+        
+#         await message.reply(get_text("invalid_command", language))
+        
+#     except Exception as e:
+#         logger.error(f"Noma'lum xabar xatoligi: {e}")
+
+# async def main():
+#     """Asosiy funksiya"""
+#     try:
+#         # Konfiguratsiyani tekshirish
+#         config_errors = Config.validate_config()
+#         if config_errors:
+#             print("❌ Konfiguratsiya xatoliklari:")
+#             for error in config_errors:
+#                 print(f"  • {error}")
+#             print("\n💡 Iltimos config.py faylini to'g'ri sozlang.")
+#             sys.exit(1)
+        
+#         # Database tekshirish
+#         db.init_db()
+#         print("✅ Database tayyor")
+        
+#         # Fayllar papkasi
+#         import os
+#         if not os.path.exists(Config.FILES_BASE_PATH):
+#             os.makedirs(Config.FILES_BASE_PATH)
+#         print("✅ Fayllar papkasi tayyor")
+        
+#         # AI servisini tekshirish
+#         print("🤖 AI servisi tayyor")
+        
+#         # Router ni dispatcher ga qo'shish
+#         dp.include_router(router)
+        
+#         logger.info("Bot ishga tushdi")
+#         print("🚀 Bot ishga tushdi!")
+#         bot_info = await bot.get_me()
+#         print(f"📱 Bot username: @{bot_info.username}")
+#         print("⏹️ To'xtatish uchun Ctrl+C bosing")
+        
+#         # Webhook tozalash va polling boshlash
+#         await bot.delete_webhook(drop_pending_updates=True)
+#         await dp.start_polling(bot)
+        
+#     except KeyboardInterrupt:
+#         logger.info("Bot to'xtatildi (Ctrl+C)")
+#         print("\n👋 Bot to'xtatildi")
+#     except Exception as e:
+#         logger.error(f"Bot ishga tushirishda xatolik: {e}")
+#         print(f"❌ Bot ishga tushirishda xatolik: {e}")
+#         sys.exit(1)
+
+# if __name__ == "__main__":
+#     asyncio.run(main())
+
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
@@ -5,205 +542,326 @@ import asyncio
 import logging
 import sys
 import os
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+# Aiogram imports
 from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    Message, CallbackQuery, InlineKeyboardMarkup, 
+    InlineKeyboardButton, FSInputFile, ErrorEvent
+)
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 
 # Local imports
-from config import Config
-from database.models import DatabaseManager
+from config import Config, validate_and_setup
+from database.models import get_database, get_crud_instances
 from services.ai_service import AIService
 from services.file_service import FileService
-from utils.language import get_text, get_language_keyboard, get_main_menu_keyboard, get_back_keyboard
+from utils.languages import get_text, get_language_keyboard, get_main_menu_keyboard
 
-# Handlers import
+# Import handlers
 from handlers.employer import EmployerHandlers
 from handlers.jobseeker import JobseekerHandlers
-router = Router()
+
+# ===========================================
+# SETUP VA INITIALIZATION
+# ===========================================
+
+# Konfiguratsiyani tekshirish va sozlash
+validate_and_setup()
+
+# Logger sozlash
+logger = logging.getLogger(__name__)
 
 # Bot va Dispatcher yaratish
 bot = Bot(token=Config.TELEGRAM_BOT_TOKEN)
 storage = MemoryStorage()
-dp = Dispatcher(storage=storage)
+dp = Dispatcher(storage=storage) # ✅ Per-user sequential processing
+
+# Router yaratish
 main_router = Router()
 
+# Database va CRUD
+db = get_database()
+crud = get_crud_instances(db)
+
 # Servislar
-db = DatabaseManager()
-ai_service = AIService(Config.OPENAI_API_KEY)
+ai_service = AIService(
+    api_key=Config.OPENAI_API_KEY,
+    model=Config.OPENAI_MODEL,
+    max_tokens=Config.OPENAI_MAX_TOKENS,
+    temperature=Config.OPENAI_TEMPERATURE
+)
 file_service = FileService(Config.FILES_BASE_PATH)
 
-# Handlerlar
-employer_handlers = EmployerHandlers(bot, db, ai_service, file_service)
-jobseeker_handlers = JobseekerHandlers(bot, db, ai_service, file_service)
+# Handler instanslari
+employer_handlers = EmployerHandlers(bot, crud, ai_service, file_service)
+jobseeker_handlers = JobseekerHandlers(bot, crud, ai_service, file_service)
 
-# Logging sozlash
-logging.basicConfig(
-    level=getattr(logging, Config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(Config.LOG_FILE, encoding='utf-8'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__) # logging.getLogger(__name__)
+# ===========================================
+# STATES - FSM holatlari
+# ===========================================
 
-# States - Foydalanuvchi holatlari
+class UserStates(StatesGroup):
+    """Umumiy foydalanuvchi holatlari"""
+    LANGUAGE_SELECTION = State()
+    ROLE_SELECTION = State()
+
 class EmployerStates(StatesGroup):
-    CREATING_COMPANY_NAME = State()
-    CREATING_COMPANY_DESC = State()
-    CREATING_VACANCY_TITLE = State()
-    CREATING_VACANCY_DESC = State()
-    CREATING_VACANCY_REQ = State()
-    CREATING_VACANCY_RESP = State()
-    CREATING_SALARY = State()
-    CREATING_WORK_HOURS = State()
-    CREATING_WORK_DAYS = State()
-    CREATING_WORK_LOCATION = State()
-    CREATING_CRITERIA_SKILLS = State()
-    CREATING_CRITERIA_EXP = State()
-    CREATING_CRITERIA_EDU = State()
-    CREATING_CRITERIA_LANG = State()
-    CREATING_CRITERIA_ADD = State()
-    CREATING_QUESTIONS = State()
+    """Ish beruvchi holatlari - Vakansiya yaratish"""
+    COMPANY_NAME = State()
+    COMPANY_DESCRIPTION = State()
+    
+    VACANCY_TITLE = State()
+    VACANCY_DESCRIPTION = State()
+    VACANCY_REQUIREMENTS = State()
+    VACANCY_RESPONSIBILITIES = State()
+    VACANCY_SALARY = State()
+    VACANCY_LOCATION = State()
+    VACANCY_WORK_TYPE = State()
+    VACANCY_EXPERIENCE = State()
+    
+    AI_CRITERIA = State()
+    AI_PROMPT = State()
+    INTERVIEW_QUESTIONS = State()
+    
+    CONFIRMATION = State()
 
 class JobseekerStates(StatesGroup):
+    """Ishga topshiruvchi holatlari"""
     UPLOADING_RESUME = State()
     ANSWERING_QUESTIONS = State()
-    PROVIDING_INFO = State()
+    PROVIDING_ADDITIONAL_INFO = State()
 
-# Yordamchi funksiyalar
-def get_user_language(user_id: int) -> str:
-    """Foydalanuvchi tilini olish"""
-    user = db.get_user_by_telegram_id(user_id)
-    return user['language'] if user else Config.DEFAULT_LANGUAGE
+# ===========================================
+# UTILITY FUNCTIONS
+# ===========================================
 
-async def get_user_info(message: Message) -> tuple:
+async def get_user_info(message_or_callback) -> Dict[str, Any]:
     """Foydalanuvchi ma'lumotlarini olish"""
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
-    return user_id, username, first_name, last_name
+    user = message_or_callback.from_user
+    return {
+        'telegram_id': user.id,
+        'username': user.username,
+        'first_name': user.first_name,
+        'last_name': user.last_name
+    }
 
-# Start komandasi
-@router.message(Command("start"))
-async def start_command(message: Message):
-    """Bot boshlanishi"""
+async def get_or_create_user(telegram_id: int, **kwargs) -> Dict[str, Any]:
+    """Foydalanuvchini olish yoki yaratish"""
+    user = crud['user'].get_user_by_telegram_id(telegram_id)
+    
+    if not user:
+        user_id = crud['user'].create_user(
+            telegram_id=telegram_id,
+            username=kwargs.get('username'),
+            first_name=kwargs.get('first_name'),
+            last_name=kwargs.get('last_name'),
+            language_code=Config.DEFAULT_LANGUAGE
+        )
+        user = crud['user'].get_user_by_telegram_id(telegram_id)
+        logger.info(f"Yangi foydalanuvchi yaratildi: {telegram_id}")
+    
+    return user
+
+def get_user_language(user_data: Optional[Dict]) -> str:
+    """Foydalanuvchi tilini olish"""
+    if user_data and user_data.get('language_code'):
+        return user_data['language_code']
+    return Config.DEFAULT_LANGUAGE
+
+# ===========================================
+# ERROR HANDLERS
+# ===========================================
+
+@dp.error()
+async def error_handler(event: ErrorEvent):
+    """Global error handler"""
+    logger.error(f"Bot xatoligi: {event.exception}", exc_info=True)
+    
+    if event.update.message:
+        try:
+            await event.update.message.reply(
+                "❌ Xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring."
+            )
+        except:
+            pass
+    
+    return True
+
+# ===========================================
+# START VA BASIC HANDLERS
+# ===========================================
+
+@main_router.message(Command("start"))
+async def start_command(message: Message, state: FSMContext):
+    """Bot boshlanishi - /start komandasi"""
     try:
-        user_id, username, first_name, last_name = await get_user_info(message)
+        user_info = await get_user_info(message)
+        user = await get_or_create_user(**user_info)
         
-        # Foydalanuvchini bazaga yozish
-        db.create_user(user_id, username, first_name, last_name)
+        # Analytics
+        crud['analytics'].log_user_action(
+            user_id=user['user_id'], 
+            action='start',
+            data={'source': 'command'}
+        )
+        
+        language = get_user_language(user)
         
         # Til tanlash
-        text = get_text("welcome", Config.DEFAULT_LANGUAGE)
+        text = get_text("welcome", language)
         keyboard = get_language_keyboard()
         
+        await state.set_state(UserStates.LANGUAGE_SELECTION)
         await message.answer(text, reply_markup=keyboard)
         
-        logger.info(f"Yangi foydalanuvchi boshladi: {user_id} (@{username})")
+        logger.info(f"Start komandasi: {user_info['telegram_id']} (@{user_info['username']})")
         
     except Exception as e:
         logger.error(f"Start komandasi xatoligi: {e}")
-        await message.reply(get_text("error", Config.DEFAULT_LANGUAGE))
+        await message.reply("❌ Xatolik yuz berdi. Qaytadan urinib ko'ring.")
 
-# Admin vakansiya komandasi
-@router.message(Command("ad_vacancy"))
-async def admin_vacancy_command(message: Message):
+@main_router.message(Command("ad_vacancy"))
+async def admin_vacancy_command(message: Message, state: FSMContext):
     """Maxfiy vakansiya yaratish komandasi"""
     try:
-        user_id = message.from_user.id
+        user_info = await get_user_info(message)
+        user = await get_or_create_user(**user_info)
         
-        # Admin tekshirish (ixtiyoriy)
-        if Config.is_admin(user_id):
-            logger.info(f"Admin vakansiya yaratish: {user_id}")
+        # Role ni employer qilib o'rnatish
+        crud['user'].add_user_role(user['user_id'], 'employer')
         
-        # Foydalanuvchini employer qilib belgilash
-        db.update_user_role(user_id, 'employer')
+        # Analytics
+        crud['analytics'].log_user_action(
+            user_id=user['user_id'], 
+            action='ad_vacancy_command'
+        )
         
-        language = get_user_language(user_id)
+        language = get_user_language(user)
         
         # Employer menyusiga o'tkazish
-        await show_employer_menu(message.chat.id, language)
+        await show_employer_menu(message.chat.id, language, user['user_id'])
+        await state.clear()
+        
+        logger.info(f"Ad_vacancy komandasi: {user_info['telegram_id']}")
         
     except Exception as e:
-        logger.error(f"Admin vakansiya komandasi xatoligi: {e}")
+        logger.error(f"Ad_vacancy komandasi xatoligi: {e}")
+        await message.reply("❌ Xatolik yuz berdi.")
 
-# Til tanlash callback
-@router.callback_query(F.data.startswith('lang_'))
-async def language_callback(callback: CallbackQuery):
+@main_router.message(Command("admin"))
+async def admin_command(message: Message):
+    """Admin panel"""
+    try:
+        user_info = await get_user_info(message)
+        
+        if not Config.is_admin(user_info['telegram_id']):
+            user = await get_or_create_user(**user_info)
+            language = get_user_language(user)
+            await message.reply(get_text("access_denied", language))
+            return
+        
+        user = await get_or_create_user(**user_info)
+        language = get_user_language(user)
+        
+        await show_admin_panel(message.chat.id, language)
+        
+    except Exception as e:
+        logger.error(f"Admin komandasi xatoligi: {e}")
+
+# ===========================================
+# LANGUAGE VA ROLE SELECTION
+# ===========================================
+
+@main_router.callback_query(F.data.startswith('lang_'), StateFilter(UserStates.LANGUAGE_SELECTION))
+async def language_callback(callback: CallbackQuery, state: FSMContext):
     """Til tanlash callback"""
     try:
-        user_id = callback.from_user.id
+        user_info = await get_user_info(callback)
         selected_lang = callback.data.split('_')[1]  # lang_uz -> uz
         
-        # Tilni yangilash
-        user = db.get_user_by_telegram_id(user_id)
-        if user:
-            # Faqat til yangilash
-            conn = db.get_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE users SET language = ? WHERE telegram_id = ?",
-                (selected_lang, user_id)
-            )
-            conn.commit()
-            conn.close()
-        else:
-            # Yangi foydalanuvchi yaratish
-            db.create_user(user_id, language=selected_lang)
+        # Foydalanuvchini yangilash
+        user = await get_or_create_user(**user_info)
         
-        # Xabarni o'chirish
-        await callback.message.delete()
+        # Tilni database da yangilash
+        conn = db.get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET language_code = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+            (selected_lang, user['user_id'])
+        )
+        conn.commit()
+        conn.close()
         
-        # Asosiy menyu ko'rsatish
+        # Analytics
+        crud['analytics'].log_user_action(
+            user_id=user['user_id'], 
+            action='language_selected',
+            data={'language': selected_lang}
+        )
+        
+        # Xabarni yangilash
         text = get_text("language_selected", selected_lang) + "\n\n"
         text += get_text("choose_role", selected_lang)
         keyboard = get_main_menu_keyboard(selected_lang)
         
-        await callback.message.answer(text, reply_markup=keyboard)
-        
-        logger.info(f"Til tanlandi: {user_id} -> {selected_lang}")
+        await state.set_state(UserStates.ROLE_SELECTION)
+        await callback.message.edit_text(text, reply_markup=keyboard)
         await callback.answer()
+        
+        logger.info(f"Til tanlandi: {user_info['telegram_id']} -> {selected_lang}")
         
     except Exception as e:
         logger.error(f"Til tanlash xatoligi: {e}")
-        await callback.answer(get_text("error", "uz"))
+        await callback.answer("❌ Xatolik yuz berdi")
 
-# Rol tanlash callback
-@router.callback_query(F.data.startswith('role_'))
-async def role_callback(callback: CallbackQuery):
+@main_router.callback_query(F.data.startswith('role_'), StateFilter(UserStates.ROLE_SELECTION))
+async def role_callback(callback: CallbackQuery, state: FSMContext):
     """Rol tanlash callback"""
     try:
-        user_id = callback.from_user.id
+        user_info = await get_user_info(callback)
         role = callback.data.split('_')[1]  # role_employer -> employer
-        language = get_user_language(user_id)
         
-        # Rolni yangilash
-        db.update_user_role(user_id, role)
+        user = await get_or_create_user(**user_info)
+        language = get_user_language(user)
+        
+        # Rolni database ga qo'shish
+        crud['user'].add_user_role(user['user_id'], role)
         
         # Analytics
-        db.add_analytics_event(f'role_selected_{role}', user_id)
+        crud['analytics'].log_user_action(
+            user_id=user['user_id'], 
+            action=f'role_selected_{role}'
+        )
         
         # Xabarni o'chirish
         await callback.message.delete()
         
+        # Rol bo'yicha menyu ko'rsatish
         if role == 'employer':
-            await show_employer_menu(callback.message.chat.id, language)
+            await show_employer_menu(callback.message.chat.id, language, user['user_id'])
         elif role == 'jobseeker':
-            await show_jobseeker_menu(callback.message.chat.id, language)
+            await show_jobseeker_menu(callback.message.chat.id, language, user['user_id'])
         
-        logger.info(f"Rol tanlandi: {user_id} -> {role}")
+        await state.clear()
         await callback.answer()
+        
+        logger.info(f"Rol tanlandi: {user_info['telegram_id']} -> {role}")
         
     except Exception as e:
         logger.error(f"Rol tanlash xatoligi: {e}")
-        await callback.answer(get_text("error", language))
+        await callback.answer("❌ Xatolik yuz berdi")
 
-async def show_employer_menu(chat_id: int, language: str):
+# ===========================================
+# MENU FUNCTIONS
+# ===========================================
+
+async def show_employer_menu(chat_id: int, language: str, user_id: int):
     """Ish beruvchi menyusini ko'rsatish"""
     try:
         text = get_text("employer_menu", language)
@@ -228,6 +886,12 @@ async def show_employer_menu(chat_id: int, language: str):
             ],
             [
                 InlineKeyboardButton(
+                    text=get_text("analytics", language), 
+                    callback_data="employer_analytics"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     text=get_text("btn_back", language), 
                     callback_data="back_main"
                 )
@@ -236,10 +900,13 @@ async def show_employer_menu(chat_id: int, language: str):
         
         await bot.send_message(chat_id, text, reply_markup=keyboard)
         
+        # Analytics
+        crud['analytics'].log_user_action(user_id, 'employer_menu_shown')
+        
     except Exception as e:
-        logger.error(f"Employer menyu xatoligi: {e}")
+        logger.error(f"Employer menu xatoligi: {e}")
 
-async def show_jobseeker_menu(chat_id: int, language: str):
+async def show_jobseeker_menu(chat_id: int, language: str, user_id: int):
     """Ishga topshiruvchi menyusini ko'rsatish"""
     try:
         text = get_text("jobseeker_menu", language)
@@ -266,16 +933,51 @@ async def show_jobseeker_menu(chat_id: int, language: str):
         
         await bot.send_message(chat_id, text, reply_markup=keyboard)
         
+        # Analytics
+        crud['analytics'].log_user_action(user_id, 'jobseeker_menu_shown')
+        
     except Exception as e:
-        logger.error(f"Jobseeker menyu xatoligi: {e}")
+        logger.error(f"Jobseeker menu xatoligi: {e}")
 
-# Asosiy menyuga qaytish
-@router.callback_query(F.data == 'back_main')
-async def back_to_main(callback: CallbackQuery):
+async def show_admin_panel(chat_id: int, language: str):
+    """Admin panelni ko'rsatish"""
+    try:
+        # Database analitika
+        stats = crud['analytics'].get_employer_stats(chat_id)  # Bu yerda umumiy stats kerak
+        
+        text = get_text("admin_menu", language)
+        text += f"\n\n📊 **Umumiy statistika:**\n"
+        text += f"👥 Jami foydalanuvchilar: {stats.get('total_users', 0)}\n"
+        text += f"🏢 Ish beruvchilar: {stats.get('employers', 0)}\n"
+        text += f"👨‍💼 Ishga topshiruvchilar: {stats.get('jobseekers', 0)}\n"
+        text += f"📋 Jami vakansiyalar: {stats.get('total_vacancies', 0)}\n"
+        text += f"📨 Jami arizalar: {stats.get('total_applications', 0)}"
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=get_text("detailed_analytics", language), 
+                    callback_data="admin_detailed_analytics"
+                )
+            ]
+        ])
+        
+        await bot.send_message(chat_id, text, reply_markup=keyboard, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"Admin panel xatoligi: {e}")
+
+# ===========================================
+# BACK NAVIGATION
+# ===========================================
+
+@main_router.callback_query(F.data == 'back_main')
+async def back_to_main(callback: CallbackQuery, state: FSMContext):
     """Asosiy menyuga qaytish"""
     try:
-        user_id = callback.from_user.id
-        language = get_user_language(user_id)
+        user_info = await get_user_info(callback)
+        user = await get_or_create_user(**user_info)
+        language = get_user_language(user)
         
         # Xabarni o'chirish
         await callback.message.delete()
@@ -284,240 +986,125 @@ async def back_to_main(callback: CallbackQuery):
         text = get_text("choose_role", language)
         keyboard = get_main_menu_keyboard(language)
         
+        await state.set_state(UserStates.ROLE_SELECTION)
         await callback.message.answer(text, reply_markup=keyboard)
         await callback.answer()
         
     except Exception as e:
         logger.error(f"Asosiy menyuga qaytish xatoligi: {e}")
 
-# Employer callbacks
-@router.callback_query(F.data == 'employer_create_vacancy')
-async def start_vacancy_creation(callback: CallbackQuery, state: FSMContext):
-    """Vakansiya yaratishni boshlash"""
-    try:
-        user_id = callback.from_user.id
-        language = get_user_language(user_id)
-        
-        # State o'rnatish
-        await state.set_state(EmployerStates.CREATING_COMPANY_NAME)
-        
-        # Birinchi savol
-        text = get_text("creating_vacancy", language) + "\n\n"
-        text += get_text("company_name", language)
-        
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=get_text("btn_cancel", language), 
-                    callback_data="cancel_vacancy"
-                )
-            ]
-        ])
-        
-        await callback.message.edit_text(text, reply_markup=keyboard)
-        await callback.answer()
-        
-    except Exception as e:
-        logger.error(f"Vakansiya yaratishni boshlash xatoligi: {e}")
+# ===========================================
+# HANDLERS ROUTING
+# ===========================================
 
-# Vakansiya yaratish - kompaniya nomi
-@router.message(StateFilter(EmployerStates.CREATING_COMPANY_NAME))
-async def handle_company_name(message: Message, state: FSMContext):
-    """Kompaniya nomini qayta ishlash"""
-    try:
-        company_name = message.text.strip()
-        language = get_user_language(message.from_user.id)
-        
-        if len(company_name) < 2:
-            await message.reply("❌ Kompaniya nomi juda qisqa!")
-            return
-        
-        # Ma'lumotni saqlash
-        await state.update_data(company_name=company_name)
-        await state.set_state(EmployerStates.CREATING_COMPANY_DESC)
-        
-        # Keyingi savol
-        text = get_text("company_description", language)
-        await message.answer(text)
-        
-    except Exception as e:
-        logger.error(f"Kompaniya nomi xatoligi: {e}")
+# Employer handlers
+@main_router.callback_query(F.data.startswith('employer_'))
+async def employer_callback_router(callback: CallbackQuery, state: FSMContext):
+    """Employer callback router"""
+    await employer_handlers.handle_callback(callback, state)
 
-# Vakansiya yaratish - kompaniya tavsifi
-@router.message(StateFilter(EmployerStates.CREATING_COMPANY_DESC))
-async def handle_company_description(message: Message, state: FSMContext):
-    """Kompaniya tavsifini qayta ishlash"""
-    try:
-        company_description = message.text.strip()
-        language = get_user_language(message.from_user.id)
-        
-        # Ma'lumotni saqlash
-        await state.update_data(company_description=company_description)
-        await state.set_state(EmployerStates.CREATING_VACANCY_TITLE)
-        
-        # Keyingi savol
-        text = get_text("vacancy_title", language)
-        await message.answer(text)
-        
-    except Exception as e:
-        logger.error(f"Kompaniya tavsifi xatoligi: {e}")
+# Jobseeker handlers  
+@main_router.callback_query(F.data.startswith('jobseeker_'))
+async def jobseeker_callback_router(callback: CallbackQuery, state: FSMContext):
+    """Jobseeker callback router"""
+    await jobseeker_handlers.handle_callback(callback, state)
 
-# Vakansiya yaratish - vakansiya nomi
-@router.message(StateFilter(EmployerStates.CREATING_VACANCY_TITLE))
-async def handle_vacancy_title(message: Message, state: FSMContext):
-    """Vakansiya nomini qayta ishlash"""
-    try:
-        vacancy_title = message.text.strip()
-        language = get_user_language(message.from_user.id)
-        
-        if len(vacancy_title) < 3:
-            await message.reply("❌ Vakansiya nomi juda qisqa!")
-            return
-        
-        # Ma'lumotni saqlash
-        await state.update_data(vacancy_title=vacancy_title)
-        await state.set_state(EmployerStates.CREATING_VACANCY_DESC)
-        
-        # Keyingi savol
-        text = get_text("vacancy_description", language)
-        await message.answer(text)
-        
-    except Exception as e:
-        logger.error(f"Vakansiya nomi xatoligi: {e}")
+# ===========================================
+# FALLBACK HANDLERS
+# ===========================================
 
-# Admin komandalar
-@router.message(Command("admin"))
-async def admin_command(message: Message):
-    """Admin panel"""
+@main_router.message()
+async def unknown_message(message: Message, state: FSMContext):
+    """Noma'lum xabarlar uchun handler"""
     try:
-        user_id = message.from_user.id
+        user_info = await get_user_info(message)
+        user = await get_or_create_user(**user_info)
+        language = get_user_language(user)
         
-        if not Config.is_admin(user_id):
-            await message.reply(get_text("access_denied", get_user_language(user_id)))
-            return
+        # State tekshirish - agar FSM jarayonida bo'lsa
+        current_state = await state.get_state()
+        if current_state:
+            # Employer yoki Jobseeker handler ga yo'naltirish
+            if current_state.startswith('EmployerStates'):
+                await employer_handlers.handle_message(message, state)
+                return
+            elif current_state.startswith('JobseekerStates'):
+                await jobseeker_handlers.handle_message(message, state)
+                return
         
-        language = get_user_language(user_id)
-        await show_admin_panel(message.chat.id, language)
-        
-    except Exception as e:
-        logger.error(f"Admin komandasi xatoligi: {e}")
-
-async def show_admin_panel(chat_id: int, language: str):
-    """Admin panelni ko'rsatish"""
-    try:
-        text = get_text("admin_menu", language)
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text=get_text("analytics", language), 
-                    callback_data="admin_analytics"
-                )
-            ]
-        ])
-        
-        await bot.send_message(chat_id, text, reply_markup=keyboard)
-        
-    except Exception as e:
-        logger.error(f"Admin panel xatoligi: {e}")
-
-@router.callback_query(F.data == 'admin_analytics')
-async def admin_analytics(callback: CallbackQuery):
-    """Admin analitika"""
-    try:
-        user_id = callback.from_user.id
-        
-        if not Config.is_admin(user_id):
-            await callback.answer(get_text("access_denied", "uz"))
-            return
-        
-        language = get_user_language(user_id)
-        stats = db.get_analytics_summary()
-        
-        from datetime import datetime
-        today = datetime.now().strftime("%d.%m.%Y")
-        
-        text = get_text("analytics_data", language).format(
-            stats.get('total_users', 0),
-            stats.get('employers', 0),
-            stats.get('jobseekers', 0),
-            stats.get('total_vacancies', 0),
-            stats.get('active_vacancies', 0),
-            stats.get('archived_vacancies', 0),
-            stats.get('total_applications', 0),
-            stats.get('accepted_applications', 0),
-            stats.get('total_applications', 0) - stats.get('accepted_applications', 0),
-            today
-        )
-        
-        await callback.answer()
-        await callback.message.answer(text)
-        
-    except Exception as e:
-        logger.error(f"Admin analitika xatoligi: {e}")
-        await callback.answer(get_text("error", "uz"))
-
-# Noma'lum xabarlar uchun handler
-@router.message()
-async def unknown_message(message: Message):
-    """Noma'lum xabarlar uchun"""
-    try:
-        user_id = message.from_user.id
-        language = get_user_language(user_id)
-        
-        # Foydalanuvchini tekshirish
-        user = db.get_user_by_telegram_id(user_id)
-        if not user:
-            # Yangi foydalanuvchi - start komandasi
-            text = get_text("welcome", Config.DEFAULT_LANGUAGE)
-            keyboard = get_language_keyboard()
-            await message.answer(text, reply_markup=keyboard)
-            return
-        
-        # Rol tekshirish
-        if not user.get('role'):
-            text = get_text("choose_role", language)
-            keyboard = get_main_menu_keyboard(language)
-            await message.answer(text, reply_markup=keyboard)
-            return
-        
+        # Oddiy noma'lum xabar
         await message.reply(get_text("invalid_command", language))
+        
+        # Analytics
+        crud['analytics'].log_user_action(
+            user_id=user['user_id'], 
+            action='unknown_message',
+            data={'text': message.text[:100]}  # Birinchi 100 ta belgini saqlash
+        )
         
     except Exception as e:
         logger.error(f"Noma'lum xabar xatoligi: {e}")
 
+# ===========================================
+# MAIN FUNCTION
+# ===========================================
+
 async def main():
-    """Asosiy funksiya"""
+    """Asosiy funksiya - Bot ishga tushirish"""
     try:
+        logger.info("Bot ishga tushmoqda...")
+        
         # Konfiguratsiyani tekshirish
         config_errors = Config.validate_config()
         if config_errors:
             print("❌ Konfiguratsiya xatoliklari:")
             for error in config_errors:
                 print(f"  • {error}")
-            print("\n💡 Iltimos config.py faylini to'g'ri sozlang.")
-            sys.exit(1)
+            
+            critical_errors = [e for e in config_errors if "❌" in e]
+            if critical_errors:
+                print("\n💀 Kritik xatoliklar tufayli bot ishga tushmaydi!")
+                sys.exit(1)
         
-        # Database tekshirish
-        db.init_db()
-        print("✅ Database tayyor")
+        # Database ni ishga tushirish
+        db.init_database()
+        logger.info("✅ Database tayyor")
         
-        # Fayllar papkasi
-        import os
-        if not os.path.exists(Config.FILES_BASE_PATH):
-            os.makedirs(Config.FILES_BASE_PATH)
-        print("✅ Fayllar papkasi tayyor")
+        # File service ni tekshirish
+        file_service.ensure_directories()
+        logger.info("✅ File service tayyor")
         
-        # AI servisini tekshirish
-        print("🤖 AI servisi tayyor")
+        # AI service ni tekshirish
+        if await ai_service.test_connection():
+            logger.info("✅ AI service tayyor")
+        else:
+            logger.warning("⚠️ AI service bilan aloqa yo'q!")
         
         # Router ni dispatcher ga qo'shish
-        dp.include_router(router)
+        # ===========================================
+        # HANDLER INSTANSLARI YARATISH
+        # ===========================================
+        employer_handlers = EmployerHandlers(bot, crud, ai_service, file_service)
+        jobseeker_handlers = JobseekerHandlers(bot, crud, ai_service, file_service)
         
-        logger.info("Bot ishga tushdi")
-        print("🚀 Bot ishga tushdi!")
+        # ===========================================
+        # ROUTER REGISTRATION - MUHIM!
+        # ===========================================
+        
+        # Ana shu qatorlarni qo'shing:
+        dp.include_router(employer_handlers.router)    # ✅ EMPLOYER
+        dp.include_router(jobseeker_handlers.router)   # ✅ JOBSEEKER
+        dp.include_router(main_router) 
+        
+        # Bot ma'lumotini olish
         bot_info = await bot.get_me()
+        logger.info(f"Bot ishga tushdi: @{bot_info.username}")
+        
+        print("🚀 Bot muvaffaqiyatli ishga tushdi!")
         print(f"📱 Bot username: @{bot_info.username}")
-        print("⏹️ To'xtatish uchun Ctrl+C bosing")
+        print(f"🤖 OpenAI model: {Config.OPENAI_MODEL}")
+        print(f"📊 Admin foydalanuvchilar: {len(Config.ADMIN_USERS)}")
+        print("⏹️ To'xtatish uchun Ctrl+C bosing\n")
         
         # Webhook tozalash va polling boshlash
         await bot.delete_webhook(drop_pending_updates=True)
@@ -527,9 +1114,12 @@ async def main():
         logger.info("Bot to'xtatildi (Ctrl+C)")
         print("\n👋 Bot to'xtatildi")
     except Exception as e:
-        logger.error(f"Bot ishga tushirishda xatolik: {e}")
+        logger.error(f"Bot ishga tushirishda xatolik: {e}", exc_info=True)
         print(f"❌ Bot ishga tushirishda xatolik: {e}")
         sys.exit(1)
+    finally:
+        # Cleanup
+        await bot.session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
